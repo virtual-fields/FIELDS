@@ -1,10 +1,7 @@
-/**
- *Submitted for verification at BscScan.com on 2022-01-24
-*/
 
 // SPDX-License-Identifier: Unlicensed
 
-pragma solidity 0.8.9;
+pragma solidity 0.8.13;
 
 abstract contract Context {
     function _msgSender() internal view virtual returns (address payable) {
@@ -512,7 +509,7 @@ interface IUniswapV2Pair {
 
     function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external;
 
-    event Charity(address indexed sender, uint amount0, uint amount1, address indexed to);
+    event Marketing(address indexed sender, uint amount0, uint amount1, address indexed to);
     event Swap(
         address indexed sender,
         uint amount0In,
@@ -681,8 +678,32 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
     ) external;
 }
 
+contract LockToken is Ownable {
+    bool public isOpen = false;
+    mapping(address => bool) private _whiteList;
+    modifier open(address from, address to) {
+        require(isOpen || _whiteList[from] || _whiteList[to], "Not Open");
+        _;
+    }
 
-contract Virtualfields is Context, IERC20, Ownable {
+    constructor() {
+        _whiteList[msg.sender] = true;
+        _whiteList[address(this)] = true;
+    }
+
+    function openTrade() external onlyOwner {
+        isOpen = true;
+    }
+
+    function includeToWhiteList(address[] memory _users) external onlyOwner {
+        for(uint8 i = 0; i < _users.length; i++) {
+            _whiteList[_users[i]] = true;
+        }
+    }
+}
+
+
+contract Virtualfields is Context, IERC20, Ownable, LockToken {
     using SafeMath for uint256;
     using Address for address;
 
@@ -701,7 +722,7 @@ contract Virtualfields is Context, IERC20, Ownable {
     mapping (address => uint) private cooldown;
    
     uint256 private constant MAX = ~uint256(0);
-    uint256 private _tTotal = 5000000000 * 10**18;
+    uint256 private _tTotal = 10000000000 * 10**18;
     uint256 private _rTotal = (MAX - (MAX % _tTotal));
     uint256 private _tFeeTotal;
 
@@ -709,26 +730,31 @@ contract Virtualfields is Context, IERC20, Ownable {
     string private _symbol = "Fields";
     uint8 private _decimals = 18;
     
-    address payable public devWallet = payable(0xD8eE50587A326D8022eBEF6460c960f3645354A4);
-    address payable public charityWallet = payable(0x5Ceba30489457856C645599E8927eaC7703c0Bab);
+    address payable public devWallet = payable(0x85C017E953aA3DdEEaeE84737fbB5D8CC2A1Ba64);
+    address payable public marketingWallet = payable(0x5736b347D3A0b0c9c08a5B3214777b7bC10963e7);
         
-    uint256 public _taxFee = 2;
+    uint256 public _taxFee = 3;
     uint256 private _previousTaxFee = _taxFee;
     
-    uint256 public _liquidityFee = 2;
+    uint256 public _liquidityFee = 3;
     uint256 private _previousLiquidityFee = _liquidityFee;
 
-    uint256 public _charityFee = 1;
-    uint256 private _previousCharityFee = _charityFee;
+    uint256 public _marketingFee = 3;
+    uint256 private _previousMarketingFee = _marketingFee;
     
-    uint256 public _devFee = 10;
+    uint256 public _devFee = 3;
     uint256 private _previousDevFee = _devFee;
+
+    uint256 public _burnFee = 2;
+    uint256 private _previousBurnFee = _burnFee;
+    address public deadWallet = 0x000000000000000000000000000000000000dEaD;
     
     //Sale fees
-    uint256 public _saleTaxFee = 2;
-    uint256 public _saleLiquidityFee = 2;
-    uint256 public _saleDevFee = 10;
-    uint256 public _saleCharityFee = 1;
+    uint256 public _saleTaxFee = 4;
+    uint256 public _saleLiquidityFee = 3;
+    uint256 public _saleDevFee = 3;
+    uint256 public _saleMarketingFee = 5;
+    uint256 public _saleBurnFee = 2;
 
     IUniswapV2Router02 public  uniswapV2Router;
     address public  uniswapV2Pair;
@@ -741,9 +767,9 @@ contract Virtualfields is Context, IERC20, Ownable {
         uint256 ethReceived
     );
 
-    uint256 public minimumTokensBeforeSwap = 10000000 * 10**18;
-    uint256 public _maxTxAmount = 5000000000 * 10**18;
-    uint256 public maxWalletToken = 5000000000 * (10**18);
+    uint256 public minimumTokensBeforeSwap = 20000000 * 10**18;
+    uint256 public _maxTxAmount = 10000000000 * 10**18;
+    uint256 public maxWalletToken = 10000000000 * (10**18);
     
     event SwapTokensForETH(
         uint256 amountIn,
@@ -762,7 +788,7 @@ contract Virtualfields is Context, IERC20, Ownable {
     constructor(address _owner) 
     {
         _rOwned[_owner] = _rTotal;
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E); // pancakeswap v2 router address
          // Create a uniswap pair for this new token
         uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this), _uniswapV2Router.WETH());
@@ -771,7 +797,7 @@ contract Virtualfields is Context, IERC20, Ownable {
         //exclude owner and this contract from fee
         _isExcludedFromFee[_owner] = true;
         _isExcludedFromFee[devWallet] = true;
-        _isExcludedFromFee[charityWallet] = true;
+        _isExcludedFromFee[marketingWallet] = true;
         _isExcludedFromFee[address(this)] = true;
         emit Transfer(address(0), _owner, _tTotal);
     }
@@ -829,10 +855,6 @@ contract Virtualfields is Context, IERC20, Ownable {
 
     function isExcludedFromReward(address account) public view returns (bool) {
         return _isExcluded[account];
-    }
-
-    function totalFees() public view returns (uint256) {
-        return _tFeeTotal;
     }
 
     function deliver(uint256 tAmount) public {
@@ -965,14 +987,16 @@ contract Virtualfields is Context, IERC20, Ownable {
         _taxFee = 0;
         _liquidityFee = 0;
         _devFee = 0;
-        _charityFee = 0;
+        _marketingFee = 0;
+        _burnFee = 0;
     }
     
     function restoreAllFee() private {
        _taxFee = _previousTaxFee;
        _liquidityFee = _previousLiquidityFee;
-       _charityFee = _previousCharityFee;
+       _marketingFee = _previousMarketingFee;
        _devFee = _previousDevFee;
+       _burnFee = _previousBurnFee;
     }
     
     function isExcludedFromFee(address account) public view returns(bool) {
@@ -987,7 +1011,7 @@ contract Virtualfields is Context, IERC20, Ownable {
         emit Approval(owner, spender, amount);
     }
 
-    function _transfer(address from, address to, uint256 amount) private 
+    function _transfer(address from, address to, uint256 amount) open(from, to) private 
     {
         require(from != address(0), "ERC20: transfer from the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
@@ -1014,11 +1038,11 @@ contract Virtualfields is Context, IERC20, Ownable {
         if (
             overMinTokenBalance &&
             !inSwapAndLiquify &&
-            from != uniswapV2Pair &&
+            to == uniswapV2Pair &&
             swapAndLiquifyEnabled
         ) {
             contractTokenBalance = minimumTokensBeforeSwap;
-            //add liquidity and send bnb to dev and charity wallet
+            //add liquidity and send bnb to dev and marketing wallet
             swapAndLiquify(contractTokenBalance);
         }
         
@@ -1026,9 +1050,8 @@ contract Virtualfields is Context, IERC20, Ownable {
     }
 
     function swapAndLiquify(uint256 contractTokenBalance) private lockTheSwap {
-        uint256 tokensForLiquidity = contractTokenBalance.mul(_liquidityFee).div(_liquidityFee.add(_devFee).add(_charityFee));
-        uint256 tokensForDev = contractTokenBalance.mul(_devFee).div(_liquidityFee.add(_devFee).add(_charityFee));
-        uint256 tokensForCharity = contractTokenBalance.sub(tokensForLiquidity.add(tokensForDev));
+        // Liquidity token share
+        uint256 tokensForLiquidity = contractTokenBalance.mul(_saleLiquidityFee).div(_saleLiquidityFee.add(_saleDevFee).add(_saleMarketingFee));
         
         // split the Liquidity token balance into halves
         uint256 half = tokensForLiquidity.div(2);
@@ -1041,7 +1064,7 @@ contract Virtualfields is Context, IERC20, Ownable {
         uint256 initialBalance = address(this).balance;
 
         // swap tokens for ETH
-        swapTokensForBnb(half, address(this)); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+        swapTokensForBnb(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
 
         // how much ETH did we just swap into?
         uint256 newBalance = address(this).balance.sub(initialBalance);
@@ -1049,16 +1072,16 @@ contract Virtualfields is Context, IERC20, Ownable {
         // add liquidity to uniswap
         addLiquidity(otherHalf, newBalance);
 
-        // swap and Send BNB to dev wallet
-        swapTokensForBnb(tokensForDev, devWallet);
+        // swap and Send BNB to dev marketing and dev wallets
+        swapTokensForBnb(contractTokenBalance.sub(tokensForLiquidity));
 
-        // swap and send BNB to  charity wallet
-          swapTokensForBnb(tokensForCharity, charityWallet);
+        marketingWallet.transfer(address(this).balance.mul(_saleMarketingFee).div(_saleMarketingFee.add(_saleDevFee)));
+        devWallet.transfer(address(this).balance);
 
         emit SwapAndLiquify(half, newBalance);
     }
 
-    function swapTokensForBnb(uint256 tokenAmount, address _to) private {
+    function swapTokensForBnb(uint256 tokenAmount) private {
 
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
@@ -1074,7 +1097,7 @@ contract Virtualfields is Context, IERC20, Ownable {
             tokenAmount,
             0, // accept any amount of ETH
             path,
-            _to,
+            address(this),
             block.timestamp
         );
         
@@ -1099,7 +1122,7 @@ contract Virtualfields is Context, IERC20, Ownable {
     {
         if(recipient==uniswapV2Pair)
         {
-            setAllFees(_saleTaxFee, _saleLiquidityFee, _saleDevFee, _saleCharityFee);
+            setAllFees(_saleTaxFee, _saleLiquidityFee, _saleDevFee, _saleMarketingFee, _saleBurnFee);
         }
         
         
@@ -1132,8 +1155,9 @@ contract Virtualfields is Context, IERC20, Ownable {
     function _transferStandard(address sender, address recipient, uint256 tAmount) private 
     {
         (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity) = _getValues(tAmount);
-        (tTransferAmount, rTransferAmount) = takeCharity(sender, tTransferAmount, rTransferAmount, tAmount);
+        (tTransferAmount, rTransferAmount) = takeMarketing(sender, tTransferAmount, rTransferAmount, tAmount);
         (tTransferAmount, rTransferAmount) = takeDev(sender, tTransferAmount, rTransferAmount, tAmount);
+        (tTransferAmount, rTransferAmount) = takeBurn(sender, tTransferAmount, rTransferAmount, tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
         _takeLiquidity(tLiquidity);
@@ -1154,16 +1178,29 @@ contract Virtualfields is Context, IERC20, Ownable {
         return(tTransferAmount, rTransferAmount); 
     }
 
-    function takeCharity(address sender, uint256 tTransferAmount, uint256 rTransferAmount, uint256 tAmount) private
+    function takeBurn(address sender, uint256 tTransferAmount, uint256 rTransferAmount, uint256 tAmount) private
     returns (uint256, uint256)
     {
-        if(_charityFee==0) {  return(tTransferAmount, rTransferAmount); }
-        uint256 tCharity = tAmount.div(100).mul(_charityFee);
-        uint256 rCharity = tCharity.mul(_getRate());
-        rTransferAmount = rTransferAmount.sub(rCharity);
-        tTransferAmount = tTransferAmount.sub(tCharity);
-        _rOwned[address(this)] = _rOwned[address(this)].add(rCharity);
-        emit Transfer(sender, address(this), tCharity);
+        if(_burnFee==0) {  return(tTransferAmount, rTransferAmount); }
+        uint256 tBurn = tAmount.div(100).mul(_burnFee);
+        uint256 rBurn = tBurn.mul(_getRate());
+        rTransferAmount = rTransferAmount.sub(rBurn);
+        tTransferAmount = tTransferAmount.sub(tBurn);
+        _rOwned[deadWallet] = _rOwned[deadWallet].add(rBurn);
+        emit Transfer(sender, deadWallet, tBurn);
+        return(tTransferAmount, rTransferAmount); 
+    }
+
+    function takeMarketing(address sender, uint256 tTransferAmount, uint256 rTransferAmount, uint256 tAmount) private
+    returns (uint256, uint256)
+    {
+        if(_marketingFee==0) {  return(tTransferAmount, rTransferAmount); }
+        uint256 tMarketing = tAmount.div(100).mul(_marketingFee);
+        uint256 rMarketing = tMarketing.mul(_getRate());
+        rTransferAmount = rTransferAmount.sub(rMarketing);
+        tTransferAmount = tTransferAmount.sub(tMarketing);
+        _rOwned[address(this)] = _rOwned[address(this)].add(rMarketing);
+        emit Transfer(sender, address(this), tMarketing);
         return(tTransferAmount, rTransferAmount);
     }
 
@@ -1216,48 +1253,55 @@ contract Virtualfields is Context, IERC20, Ownable {
         devWallet = newWallet;
     }
 
-    function setCharityWallet(address payable newWallet) external onlyOwner() {
-        charityWallet = newWallet;
+    function setMarketingWallet(address payable newWallet) external onlyOwner() {
+        marketingWallet = newWallet;
     }
     
-    function setAllFees(uint256 taxFee, uint256 liquidityFee, uint256 devFee, uint256 charityFee) private {
+    function setAllFees(uint256 taxFee, uint256 liquidityFee, uint256 devFee, uint256 marketingFee, uint256 burnFee) private {
+        require(taxFee.add(liquidityFee).add(devFee).add(marketingFee.add(burnFee)) <= 17, "tax too high");
         _taxFee = taxFee;
         _liquidityFee = liquidityFee;
         _devFee = devFee;
-        _charityFee = charityFee;
+        _marketingFee = marketingFee;
+        _burnFee = burnFee;
     }
     
     
-    function setBuyFees(uint256 taxFee, uint256 liquidityFee, uint256 devFee, uint256 charityFee) 
+    function setBuyFees(uint256 taxFee, uint256 liquidityFee, uint256 devFee, uint256 marketingFee, uint256 burnFee) 
     external onlyOwner() {
-        setAllFees(taxFee, liquidityFee, devFee, charityFee);
+        require(taxFee.add(liquidityFee).add(devFee).add(marketingFee).add(burnFee) <= 17, "tax too high");
+        setAllFees(taxFee, liquidityFee, devFee, marketingFee, burnFee);
         _previousTaxFee = taxFee;
         _previousLiquidityFee = liquidityFee;
-        _previousCharityFee = charityFee;
+        _previousMarketingFee = marketingFee;
         _previousDevFee = devFee;
+         _previousBurnFee = burnFee;
     }
     
     
-    function setSaleFees(uint256 taxFee, uint256 liquidityFee, uint256 devFee, uint256 charityFee) 
+    function setSaleFees(uint256 taxFee, uint256 liquidityFee, uint256 devFee, uint256 marketingFee, uint256 burnFee) 
     external onlyOwner() {
+        require(taxFee.add(liquidityFee).add(devFee).add(marketingFee).add(burnFee) <= 17, "tax too high");
         _saleTaxFee = taxFee;
         _saleLiquidityFee = liquidityFee;
         _saleDevFee = devFee;
-        _saleCharityFee = charityFee;
+        _saleMarketingFee = marketingFee;
+        _saleBurnFee = burnFee;
     }     
     
     
     function setMinimumTokensBeforeSwap(uint256 newAmt) external onlyOwner() {
-        minimumTokensBeforeSwap = newAmt * (10**18);
+        minimumTokensBeforeSwap = newAmt;
     }
 
-    function setMaxWalletTokend(uint256 _maxToken) external onlyOwner {
-  	    maxWalletToken = _maxToken * (10**18);
+    function setMaxWalletToken(uint256 _maxToken) external onlyOwner {
+  	    maxWalletToken = _maxToken;
+          require(maxWalletToken > totalSupply().div(400), "value too low");
   	}
     
     function setMaxTxAmount(uint256 maxTxAmount) external onlyOwner() {
-        require(maxTxAmount > 0, "transaction amount must be greater than zero");
-        _maxTxAmount = maxTxAmount * (10**18);
+        _maxTxAmount = maxTxAmount;
+        require(_maxTxAmount > totalSupply().div(400), "value too low");
     }
 
     function withdrawStuckBNB(address payable _to, uint256 _amountInWei) external onlyOwner {
